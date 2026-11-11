@@ -42,6 +42,7 @@ import yfinance as yf
 # ════════════════════════════════════════════════════════════════════════════
 # 1. CONSTANTS
 # ════════════════════════════════════════════════════════════════════════════
+LOGIC_VERSION = "1.0.1"   # must match "Relative Momentum Lab — Algorithm Logic Specification"
 INDEX_FILES = {
     "Nifty 50": "ind_nifty50list.csv",
     "Nifty 100": "ind_nifty100list.csv",
@@ -645,6 +646,9 @@ def universe_at(t):
 all_syms = sorted(set(const["Symbol"]) | (set(hist_syms) if hist_lists else set()))
 lcm = last_completed_month()
 month_opts = [str(p) for p in pd.period_range("2010-01", lcm, freq="M")]
+# Present holdings may start in the current month: its first buys happen at the close of the
+# last completed month, so only finished monthly bars are used.
+present_opts = month_opts + [str(lcm + 1)]
 
 
 def get_data(first_rebalance: pd.Period, last: pd.Period):
@@ -668,10 +672,14 @@ st.markdown(f"**Universe:** {index_name} · {len(const)} stocks ({const_src})"
 cA, cB = st.columns(2)
 with cA, st.container(border=True):
     st.subheader("Present holdings")
-    p_start = st.selectbox("Portfolio started in", month_opts,
-                           index=month_opts.index(str(lcm - 11)) if str(lcm - 11) in month_opts else 0,
-                           help="Holdings depend on when the portfolio began; first buys at the close "
-                                "of the month before this one.")
+    p_start = st.selectbox("Portfolio start (first month held)", present_opts,
+                           index=present_opts.index(str(lcm - 11)) if str(lcm - 11) in present_opts else 0,
+                           help="The first buys happen at the close of the month BEFORE this one. "
+                                f"Pick {lcm + 1} for a fresh portfolio built at the {lcm.strftime('%b %Y')} close; "
+                                "pick an earlier month to see what a portfolio started then holds today.")
+    st.caption(f"{p_start}: first buys at the {(pd.Period(p_start, 'M') - 1).strftime('%b %Y')} close"
+               + (" — fresh portfolio from the latest month-end." if p_start == str(lcm + 1) else
+                  f", then monthly rebalancing up to the {lcm.strftime('%b %Y')} close."))
     run_present = st.button("Show present holdings", type="primary", width="stretch")
 with cB, st.container(border=True):
     st.subheader("Backtest")
@@ -728,7 +736,7 @@ def _pct(df, cols):
 with tab_p:
     R = st.session_state.get("present")
     if R is None:
-        st.info("Choose when the portfolio started and press **Show present holdings**.")
+        st.info("Choose the first month held and press **Show present holdings**.")
     else:
         if R["P"] != P or R["index"] != index_name:
             st.warning("Settings changed since this run — press the button again to refresh.")
@@ -996,12 +1004,13 @@ with tab_b:
             V.rename(index=str).to_excel(xw, sheet_name="Monthly values")
             posv.to_excel(xw, sheet_name="Trades", index=False)
             B["dec"].to_excel(xw, sheet_name="Candidate decisions", index=False)
-            pd.DataFrame(list(B["P"].items()), columns=["Setting", "Value"]).astype(str).to_excel(
+            pd.DataFrame([("Logic version", LOGIC_VERSION)] + list(B["P"].items()),
+                         columns=["Setting", "Value"]).astype(str).to_excel(
                 xw, sheet_name="Settings", index=False)
         st.download_button("Download backtest (Excel)", xbuf.getvalue(),
                            f"momentum_backtest_{months[0] + 1}_{months[-1]}.xlsx",
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-st.caption(f"Data: constituents {const_src}; stock prices Yahoo Finance "
+st.caption(f"Logic version {LOGIC_VERSION} · Data: constituents {const_src}; stock prices Yahoo Finance "
            f"({'dividend-adjusted' if adjusted else 'split-adjusted'}). Rules output, not investment advice. "
            f"Rendered {datetime.now(IST):%d %b %Y %H:%M} IST.")
