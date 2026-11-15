@@ -42,7 +42,67 @@ import yfinance as yf
 # ════════════════════════════════════════════════════════════════════════════
 # 1. CONSTANTS
 # ════════════════════════════════════════════════════════════════════════════
-LOGIC_VERSION = "1.0.1"   # must match "Relative Momentum Lab — Algorithm Logic Specification"
+LOGIC_VERSION = "1.4.0"
+# Owner's default "keep anyway" list: Financial Services names re-admitted despite the industry exclusion
+DEFAULT_KEEP = ("360ONE, ABCAPITAL, ABSLAMC, ANANDRATHI, ANGELONE, BSE, BAJAJHLDNG, GROWW, CRISIL, CRAMC, "
+                "CDSL, CHOICEIN, CAMS, GICRE, HDFCAMC, HDFCLIFE, ICICILIFE, ICICIGI, ICICIAMC, IIFLCAPS, IEX, "
+                "KFINTECH, LICI, MOTILALOFS, MCX, NAM-INDIA, NIVABUPA, NUVAMA, POLICYBZR, PINELABS, SBILIFE, "
+                "SHAREINDIA, STARHEALTH, SBIN, SUNDARMFIN, TATACAP, NIACL, UTIAMC")
+
+APP_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
+html, body, .stApp, .stMarkdown, p, li, label, td, th, input, textarea, select,
+.stButton > button, [data-testid="stWidgetLabel"] {
+  font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+}
+.block-container { padding-top: 3.4rem; max-width: 1360px; }
+h1, h2, h3 { font-family: 'Manrope', 'Inter', sans-serif !important; letter-spacing: -0.01em; }
+h2 { font-size: 1.45rem !important; font-weight: 700 !important; }
+h3 { font-size: 1.12rem !important; font-weight: 700 !important; padding-left: .65rem;
+     border-left: 4px solid #0B8F6A; margin-top: 1.4rem !important; }
+/* hero */
+.rml-hero { background: linear-gradient(120deg, #0A1F33 0%, #0E3A4F 55%, #0B6B58 100%);
+  border-radius: 16px; padding: 26px 30px; margin-bottom: 18px; color: #fff;
+  box-shadow: 0 8px 24px rgba(10,31,51,.18); }
+.rml-hero .t { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 2.0rem;
+  letter-spacing: -0.02em; line-height: 1.15; }
+.rml-hero .s { color: rgba(255,255,255,.80); font-size: 1.0rem; margin-top: 6px; max-width: 760px; }
+.rml-chip { display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: .74rem; font-weight: 600;
+  padding: 3px 10px; border-radius: 999px; margin: 12px 8px 0 0;
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); color: #D7F5EA; }
+/* metric cards */
+[data-testid="stMetric"] { background: rgba(128,128,128,.05); border: 1px solid rgba(128,128,128,.18);
+  border-radius: 12px; padding: 14px 16px 12px; }
+[data-testid="stMetricLabel"] p { font-size: .76rem !important; font-weight: 600; letter-spacing: .05em;
+  text-transform: uppercase; opacity: .72; }
+[data-testid="stMetricValue"] { font-family: 'IBM Plex Mono', monospace; font-weight: 600;
+  font-size: 1.5rem !important; letter-spacing: -0.02em; }
+[data-testid="stMetricDelta"] { font-size: .8rem !important; font-weight: 500; }
+/* buttons */
+.stButton > button, .stDownloadButton > button { border-radius: 10px; font-weight: 600; padding: .55rem 1rem;
+  transition: transform .06s ease, box-shadow .12s ease; }
+.stButton > button[kind="primary"] { background: #0B8F6A; border-color: #0B8F6A;
+  box-shadow: 0 4px 12px rgba(11,143,106,.28); }
+.stButton > button[kind="primary"]:hover { background: #097A5B; border-color: #097A5B; transform: translateY(-1px); }
+/* tabs */
+.stTabs [data-baseweb="tab-list"] { gap: 6px; border-bottom: 1px solid rgba(128,128,128,.22); }
+.stTabs [data-baseweb="tab"] { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 1.0rem;
+  padding: 10px 18px; border-radius: 10px 10px 0 0; }
+.stTabs [aria-selected="true"] { color: #0B8F6A !important; }
+/* sidebar */
+section[data-testid="stSidebar"] { border-right: 1px solid rgba(128,128,128,.16); }
+section[data-testid="stSidebar"] h2 { font-size: .78rem !important; font-weight: 800 !important;
+  letter-spacing: .09em; text-transform: uppercase; color: #0B8F6A; margin-top: 1.1rem;
+  padding-bottom: 4px; border-bottom: 1px solid rgba(128,128,128,.2); }
+section[data-testid="stSidebar"] label p { font-size: .86rem; }
+/* containers, tables, alerts */
+[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 14px !important; }
+[data-testid="stDataFrame"] { border: 1px solid rgba(128,128,128,.18); border-radius: 10px; overflow: hidden; }
+[data-testid="stAlert"] { border-radius: 10px; }
+[data-testid="stCaptionContainer"] p { font-size: .84rem; line-height: 1.5; }
+</style>
+"""   # must match "Relative Momentum Lab — Algorithm Logic Specification"
 INDEX_FILES = {
     "Nifty 50": "ind_nifty50list.csv",
     "Nifty 100": "ind_nifty100list.csv",
@@ -71,7 +131,15 @@ MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", 
 
 
 def last_completed_month() -> pd.Period:
-    return pd.Period(datetime.now(IST).date(), "M") - 1
+    """The latest month whose monthly bar is final.
+
+    Normally the previous month; additionally, from 17:00 IST on the last calendar
+    day of a month, that month itself (the last session has closed by then)."""
+    now = datetime.now(IST)
+    p = pd.Period(now.date(), "M")
+    if now.day == p.days_in_month and now.hour >= 17:
+        return p
+    return p - 1
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -450,7 +518,8 @@ def trade_stats(pos: pd.DataFrame, vals: pd.DataFrame) -> dict:
 # ════════════════════════════════════════════════════════════════════════════
 def _layout(fig, h=380, yfmt=None, ytitle=None):
     fig.update_layout(height=h, margin=dict(l=10, r=10, t=30, b=10), hovermode="x unified",
-                      legend=dict(orientation="h", y=1.08, x=0), plot_bgcolor="rgba(0,0,0,0)")
+                      legend=dict(orientation="h", y=1.08, x=0), plot_bgcolor="rgba(0,0,0,0)",
+                      paper_bgcolor="rgba(0,0,0,0)", font=dict(family="Inter, sans-serif", size=13))
     fig.update_yaxes(gridcolor="rgba(128,128,128,.18)", zeroline=False, tickformat=yfmt, title=ytitle)
     fig.update_xaxes(showgrid=False)
     return fig
@@ -561,13 +630,18 @@ def bucket_table(pos: pd.DataFrame, col: str, bins, labels) -> pd.DataFrame:
 # 6. PAGE — sidebar
 # ════════════════════════════════════════════════════════════════════════════
 st.set_page_config(page_title="Relative Momentum Lab", layout="wide")
-st.title("Relative momentum lab")
-st.caption("Rank by past return, hold the leaders, rotate monthly. Configure the rules in the sidebar, "
-           "then check present holdings or run a backtest.")
+st.markdown(APP_CSS, unsafe_allow_html=True)
+st.markdown(
+    '<div class="rml-hero"><div class="t">Relative Momentum Lab</div>'
+    '<div class="s">Rank the market by past return, hold the leaders, rotate monthly. '
+    'Set the rules in the sidebar, then view present holdings or run a backtest.</div>'
+    f'<span class="rml-chip">LOGIC v{LOGIC_VERSION}</span>'
+    '<span class="rml-chip">NSE · MONTHLY REBALANCE</span>'
+    '<span class="rml-chip">RULES OUTPUT · NOT ADVICE</span></div>', unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("Universe")
-    index_name = st.selectbox("Index", list(INDEX_FILES), index=2)
+    index_name = st.selectbox("Index", list(INDEX_FILES), index=6)
     up_const = st.file_uploader("Override constituent list (NSE CSV with a 'Symbol' column)", type="csv")
     up_hist = st.file_uploader("Constituent history (report format: columns = effective dates) — "
                                "removes look-ahead bias in backtests", type="csv")
@@ -583,8 +657,8 @@ with st.sidebar:
     st.header("Entry filters")
     ema_span = st.number_input("EMA span (months)", 2, 36, 12)
     f1 = st.toggle(f"F1 · Close above {ema_span}-month EMA", True)
-    f2 = st.toggle("F2 · Extension cap", True)
-    max_ext = st.slider("Max close / EMA − 1", 0.05, 1.50, 0.25, 0.05, format="%.2f", disabled=not f2)
+    f2 = st.toggle("F2 · Extension cap", False)
+    max_ext = st.slider("Max close / EMA − 1", 0.05, 1.50, 0.40, 0.05, format="%.2f", disabled=not f2)
     f3 = st.toggle("F3 · Closing range of signal month", True)
     min_cr = st.slider("Min closing range (C−L)/(H−L)", 0.0, 1.0, 0.5, 0.05, disabled=not f3)
     low_cr_action = st.radio("If CR below min", ["pending", "skip"], disabled=not f3, horizontal=True,
@@ -626,6 +700,27 @@ except Exception as e:  # noqa: BLE001
     st.stop()
 names = const.set_index("Symbol")["Company Name"].to_dict()
 industry = const.set_index("Symbol")["Industry"].to_dict()
+
+# ---- sector / symbol exclusions (e.g. a no-lending rule) --------------------
+with st.sidebar:
+    st.header("Exclusions")
+    ind_values = sorted({str(v).strip() for v in const["Industry"] if str(v).strip()})
+    default_excl = [v for v in ind_values if "financ" in v.lower()]
+    excl_ind = st.multiselect("Exclude industries", ind_values, default=default_excl,
+                              help="NSE's industry column is broad: 'Financial Services' covers banks and "
+                                   "NBFCs but also exchanges, depositories, AMCs and insurers. Use the box "
+                                   "below to keep non-lenders.")
+    keep_txt = st.text_area("Keep anyway (symbols, comma-separated)", DEFAULT_KEEP, height=150,
+                            help="Symbols kept even if their industry is excluded")
+    excl_txt = st.text_input("Also exclude (symbols, comma-separated)", "",
+                             help="Extra symbols to exclude whatever their industry")
+keep_syms = {_clean(x) for x in keep_txt.split(",") if x.strip()}
+extra_excl = {_clean(x) for x in excl_txt.split(",") if x.strip()}
+excluded = ({s for s, v in industry.items() if str(v).strip() in excl_ind} | extra_excl) - keep_syms
+P["excl_industries"] = tuple(excl_ind)
+P["keep_symbols"] = tuple(sorted(keep_syms))
+P["excl_symbols"] = tuple(sorted(extra_excl))
+
 hist_lists = None
 if up_hist is not None:
     try:
@@ -637,10 +732,12 @@ if up_hist is not None:
 
 def universe_at(t):
     if hist_lists is None:
-        return const["Symbol"].tolist()
-    end = t.to_timestamp(how="end")
-    ok = [d for d in hist_lists if d <= end]
-    return hist_lists[max(ok)] if ok else hist_lists[min(hist_lists)]
+        base = const["Symbol"].tolist()
+    else:
+        end = t.to_timestamp(how="end")
+        ok = [d for d in hist_lists if d <= end]
+        base = hist_lists[max(ok)] if ok else hist_lists[min(hist_lists)]
+    return [s for s in base if s not in excluded]
 
 
 all_syms = sorted(set(const["Symbol"]) | (set(hist_syms) if hist_lists else set()))
@@ -666,9 +763,17 @@ def get_data(first_rebalance: pd.Period, last: pd.Period):
 # ════════════════════════════════════════════════════════════════════════════
 # 7. PAGE — controls
 # ════════════════════════════════════════════════════════════════════════════
+n_excl = sum(1 for s in const["Symbol"] if s in excluded)
 st.markdown(f"**Universe:** {index_name} · {len(const)} stocks ({const_src})"
+            + (f" · **{n_excl} excluded** ({', '.join(P['excl_industries']) or 'symbols only'}"
+               + (f"; {len(keep_syms)} kept by symbol" if keep_syms else "") + ")" if n_excl else "")
             + (" · constituent history uploaded" if hist_lists else
                " · current list used for all past months (look-ahead bias in backtests)"))
+if hist_lists and excl_ind:
+    unknown = [s for s in (set().union(*hist_lists.values()) - set(industry)) ]
+    if unknown:
+        st.caption(f"Note: {len(unknown)} past constituents are not in today's file, so their industry is "
+                   "unknown and they are NOT industry-excluded. Add specific symbols to 'Also exclude' if needed.")
 cA, cB = st.columns(2)
 with cA, st.container(border=True):
     st.subheader("Present holdings")
@@ -701,8 +806,44 @@ if run_present:
         D, _, _ = get_data(months[0], lcm)
         M = build_monthly(D, P)
         vals, pos, dec, state = run_strategy(D, M, universe_at, months, P, cost, trade_last=True)
+        cmp_px = D["Close"].ffill().iloc[-1]          # latest available daily close (CMP)
+        cmp_date = D["Close"].index[-1]
+
+        # ---- settle buy-stops already triggered during the running month (rule E4) ----
+        # The engine fills stops only at the next month-end step; here we are mid-month,
+        # so check this month's daily highs so far and move fills into holdings.
+        day_p = D["Close"].index.to_period("M")
+        live_days = D["Close"].index[day_p == months[-1] + 1]
+        still_pending, live_fills, spent = [], [], 0.0
+        for pnd in state["pending"]:
+            sym = pnd["Symbol"]
+            hit = pd.Series(dtype=float)
+            if len(live_days) and sym in D["High"].columns:
+                hi = D["High"].loc[live_days, sym].dropna()
+                hit = hi[hi >= pnd["Trigger"]]
+            if len(hit):
+                day = hit.index[0]
+                op = D["Open"].loc[day, sym]
+                gap = pd.notna(op) and op > pnd["Trigger"]
+                fill = op if gap else pnd["Trigger"]
+                state["holdings"][sym] = {"qty": pnd["Alloc"] * (1 - cost) / fill,
+                                          "pos": None, "entry": fill, "peak": fill}
+                live_fills.append({**pnd["info"], "Entry date": day, "Entry price": fill,
+                                   "Entry type": "buy-stop (gap open)" if gap else "buy-stop",
+                                   "Invested": pnd["Alloc"], "Exit month": "open",
+                                   "Exit date": cmp_date, "Exit reason": "still held"})
+                spent += pnd["Alloc"]
+            else:
+                still_pending.append(pnd)
+        state["pending"] = still_pending
+        if live_fills:
+            pos = pd.concat([pos, pd.DataFrame(live_fills)], ignore_index=True)
+
         st.session_state["present"] = dict(P=P.copy(), months=months, M=M, vals=vals, pos=pos,
-                                           dec=dec, state=state, index=index_name)
+                                           dec=dec, state=state, index=index_name,
+                                           cmp=cmp_px, cmp_date=cmp_date,
+                                           cash_now=vals["Cash"].iloc[-1] - spent,
+                                           n_live_fills=len(live_fills))
     except Exception as e:  # noqa: BLE001
         st.error(f"Present-holdings run failed: {e}")
 if run_bt:
@@ -742,14 +883,30 @@ with tab_p:
             st.warning("Settings changed since this run — press the button again to refresh.")
         t, M, vals, pos, state = R["months"][-1], R["M"], R["vals"], R["pos"], R["state"]
         v = vals["Value"]
+        cmp_px = R.get("cmp")
+        cmp_date = R.get("cmp_date")
+        # CMP with fallback to the signal month-end close for any symbol without fresh data
+        def cmp_of(sym):
+            if cmp_px is not None and sym in cmp_px.index and pd.notna(cmp_px[sym]):
+                return cmp_px[sym]
+            return M["Cf"].loc[t, sym]
+        cash_now = R.get("cash_now", vals["Cash"].iloc[-1])
+        live_val = cash_now + sum(h["qty"] * cmp_of(s) for s, h in state["holdings"].items())
         k = st.columns(5)
         k[0].metric("Signal month", t.strftime("%b %Y"))
-        k[1].metric("Portfolio value", f"₹{v.iloc[-1]:,.0f}", f"{v.iloc[-1] / R['P']['capital'] - 1:+.1%} since start")
+        k[1].metric("Value at CMP", f"₹{live_val:,.0f}",
+                    f"{live_val / R['P']['capital'] - 1:+.1%} since start")
         k[2].metric("Stocks held", f"{len(state['holdings'])} / {R['P']['top_n']}")
         k[3].metric("Buy-stops pending", len(state["pending"]))
-        k[4].metric("Cash", f"{vals['Cash'].iloc[-1] / v.iloc[-1]:.0%}")
-        st.caption(f"Positions reflect trades at the {t.strftime('%b %Y')} close. In live trading the signal "
-                   "is known only after that close: execute in NSE's post-close session or at the next open.")
+        k[4].metric("Cash", f"{cash_now / live_val:.0%}")
+        if R.get("n_live_fills"):
+            st.info(f"{R['n_live_fills']} buy-stop(s) triggered during {(t + 1).strftime('%b %Y')} and moved "
+                    "into current holdings at their fill price (trigger, or the open on a gap-up).")
+        st.caption(f"Positions reflect trades at the {t.strftime('%b %Y')} close; CMP = last Yahoo close"
+                   + (f" of {cmp_date:%d %b %Y}" if cmp_date is not None else "")
+                   + ". Prices are cached up to 6 h — press 'Clear cached data' in the sidebar and rerun "
+                     "for the freshest CMP. In live trading the signal is known only after the month-end "
+                     "close: execute in NSE's post-close session or at the next open.")
 
         sc, rank = rank_month(M, t, universe_at(t))
         cur = pos[pos["Exit month"] == "open"].copy() if len(pos) else pd.DataFrame()
@@ -759,12 +916,13 @@ with tab_p:
             cur["Industry"] = cur["Symbol"].map(industry)
             cur["Rank now"] = cur["Symbol"].map(rank)
             cur["Extension now"] = cur["Symbol"].map(M["ext"].loc[t])
-            cur["Weight"] = [state["holdings"][s]["qty"] * M["Cf"].loc[t, s] / v.iloc[-1] for s in cur["Symbol"]]
+            cur["CMP"] = cur["Symbol"].map(cmp_of)
+            cur["Return"] = cur["CMP"] / cur["Entry price"] - 1          # at CMP, not month-end
+            cur["Weight"] = [state["holdings"][s]["qty"] * cmp_of(s) / live_val for s in cur["Symbol"]]
             cur["Entry date"] = pd.to_datetime(cur["Entry date"]).dt.date
             show = cur[["Symbol", "Company", "Industry", "Entry date", "Entry type", "Entry price",
-                        "Exit price", "Return", "Weight", "Rank now", "Extension now"]].rename(
-                columns={"Exit price": "Last close"})
-            st.dataframe(show.style.format({"Entry price": "{:,.2f}", "Last close": "{:,.2f}", "Return": "{:+.1%}",
+                        "CMP", "Return", "Weight", "Rank now", "Extension now"]]
+            st.dataframe(show.style.format({"Entry price": "{:,.2f}", "CMP": "{:,.2f}", "Return": "{:+.1%}",
                                             "Weight": "{:.1%}", "Extension now": "{:+.1%}", "Rank now": "{:.0f}"}),
                          hide_index=True, width="stretch")
         else:
@@ -787,13 +945,14 @@ with tab_p:
             if state["pending"]:
                 pdf = pd.DataFrame([{"Symbol": p["Symbol"], "Company": names.get(p["Symbol"], ""),
                                      "Trigger": p["Trigger"],
-                                     "Close": M["Cf"].loc[t, p["Symbol"]],
-                                     "vs close": p["Trigger"] / M["Cf"].loc[t, p["Symbol"]] - 1,
+                                     "CMP": cmp_of(p["Symbol"]),
+                                     "Trigger vs CMP": p["Trigger"] / cmp_of(p["Symbol"]) - 1,
                                      "₹ alloc": p["Alloc"]} for p in state["pending"]])
-                st.dataframe(pdf.style.format({"Trigger": "{:,.2f}", "Close": "{:,.2f}",
-                                               "vs close": "{:+.1%}", "₹ alloc": "{:,.0f}"}),
+                st.dataframe(pdf.style.format({"Trigger": "{:,.2f}", "CMP": "{:,.2f}",
+                                               "Trigger vs CMP": "{:+.1%}", "₹ alloc": "{:,.0f}"}),
                              hide_index=True, width="stretch")
-                st.caption(f"Trigger = high of the signal month. Place as GTT / stop orders; cancel any "
+                st.caption(f"Not yet triggered: daily highs up to {cmp_date:%d %b %Y} stayed below the "
+                           f"trigger (= high of the signal month). Place as GTT / stop orders; cancel any "
                            f"not hit by the end of {(t + 1).strftime('%b %Y')}.")
             else:
                 st.write("None.")
